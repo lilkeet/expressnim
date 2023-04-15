@@ -1,24 +1,33 @@
 
 {.experimental: "strictFuncs".}
 
+import
+  std/[options, tables],
+  ../baseTypes
+
 type
   ExpressObject = ref object of RootObj
-    parent*: ExpressObject
-    identifier*: string ## Cannot be a reserved word.
-                        ## First char must be a letter, the rest can be
-                        ## letters, digits, or an underscore.
-    remark*: string
+    ## Only universe (parent of root) Schema has nil as its parent.
+    parent* {.cursor.}: ExpressObject
+    remark*: Option[SimpleString]
 
-  Schema* = ref object of ExpressObject
+  Scope = ref object of ExpressObject
+    children*: Table[SimpleString, Schema]
+    population*: Table[SimpleString, EntityAsScope]
+    functions*: Table[SimpleString, Function]
+    procedures*: Table[SimpleString, Procedure]
+    constants*: Table[SimpleString, Constant]
+
+
+  Schema* = ref object of Scope
     kind*: SchemaKind
-    children*: seq[Schema]
-    population*: seq[Entity]
-    functions*: seq[Function]
-    procedures*: seq[Procedure]
+
 
   SchemaKind* = enum
-    skRoot, skPrimary, skSupport
+    skUniverse, skRoot, skPrimary, skSupport
 
-  Entity* = ref object of ExpressObject
-  Function* = ref object of ExpressObject
-  Procedure* = ref object of ExpressObject
+  EntityAsScope* = ref object of Scope
+  Function* = ref object of Scope
+  Procedure* = ref object of Scope
+  Constant*[T] = ref object of ExpressObject
+    value*: T
