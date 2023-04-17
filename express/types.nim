@@ -1,8 +1,7 @@
 
 {.experimental: "strictFuncs".}
 
-
-import std/[options, tables, unicode, sets]
+import std/[options, tables, unicode, sets, math, sequtils]
 
 #### Simple data types
 type
@@ -21,7 +20,7 @@ type
     fixed: bool
     maxWidth: Option[Positive]
   EncodedString =  object of String
-    runes: seq[Rune] ## Runes must be in `{'\x20'..'\x7E',
+    value: seq[Rune] ## Runes must be in `{'\x20'..'\x7E',
                      ##                    '\xA0'..Rune(0x10FFFE)}.
                      ## Cannot be empty!
   SimpleString = object of String
@@ -33,39 +32,38 @@ type
     fixed: bool
     maxWidth: Option[Positive]
 
+  Indeterminate[T] = Option[T]
+
 #### Aggregation data types
 type
   Aggregate = object of RootObj
-    ## `assert bounds.a < bounds.b`
-    bounds: HSlice[Natural, Positive]
-
-  List[T] = object of Aggregate
-    value: seq[T]
-    headIndex: int
-    mayContainDuplicates: bool ## As in two of the same instance.
+    ## `assert (bounds.a < bounds.b) or (bounds.b.isNone)`
+    bounds: HSlice[Natural, Indeterminate[Positive]]
 
   Array[T] = object of Aggregate
-    case mayContainIndeterminate: bool
-    of true: maybeValue: seq[Option[T]]
-    of false: value: seq[T]
-    mayContainDuplicates: bool ## As in two of the same instance.
+    ## Fixed size (so `bounds.b.isSome`).
+    ## Can contain Indeterminate as an `OptionalArray`.
+    value: seq[T]
+    uniqueValues: bool ## As in two of the same instance.
+  OptionalArray[T] = Array[Indeterminate[T]]
+
+  List[T] = object of Aggregate
+    ## Variable, sometimes limited size.
+    ## Cannot contain Indeterminate.
+    value: seq[T]
+    uniqueValues: bool ## As in two of the same instance.
 
   Bag[T] = object of Aggregate
+    ## Variable, sometimes limited size.
+    ## Cannot contain Indeterminate.
     ## Can contain multiple of the same instance.
     value: CountTable[T]
 
   Set[T] = object of Aggregate
+    ## Variable, sometimes limited size.
+    ## Cannot contain Indeterminate.
     ## Cannnot contain multiple of the same instance.
     value: HashSet[T]
-    size: Option[Natural]
-
-func `:=:`[T](l, r: T): bool =
-  ## Instance equality operator.
-  l == r
-template `:<>:`[T](l, r: T): bool =
-  ## Instance inequality operator.
-  not (l :=: r)
-
 
 #### Named data types
 type
@@ -110,4 +108,214 @@ type
   Underlying = Simple or Aggregate or DefinedType or Constructed
   # Named already exists
 
+#### Basic utilities
+const RealMaxPrecision = block:
+  func decimalToBinary(decimal: BiggestFloat, n: int): tuple[integer,
+                                                            fraction: Binary] =
+    var integerPart = int decimal
+    block convertIntegerPart:
+      while integerPart > 0:
+        let newDigit: Bit = if integerPart mod 2 == 0: off else: on
+        result.integer.value = newDigit & result.integer.value
+        integerPart = integerPart div 2
+    block convertFractionalPart:
+      var fractionalPart = decimal - BiggestFloat integerPart
+      for _ in 1..n:
+        fractionalPart *= 2
+        if fractionalPart >= 1:
+          result.fraction.value.add on
+          fractionalPart -= 1
+        else:
+          result.fraction.value.add off
+
+  func binaryToDecimal(binaryNumber: tuple[integer,
+                                           fraction: Binary]): BiggestFloat =
+    block convertIntegerPart:
+      var powerOfTwo = 1.0
+      for index in countdown(binaryNumber.integer.value.high, 0):
+        if binaryNumber.integer.value[index] == on: result += powerOfTwo
+        powerOfTwo *= 2
+    block convertIntegerPart:
+      var powerOfTwo = 0.5
+      for bit in binaryNumber.fraction.value:
+        if bit == on: result += powerOfTwo
+        powerOfTwo *= 0.5
+
+  const
+    BitsOfMantissa = if sizeOf(float) == 8: 52
+                     elif sizeOf(float) == 4: 23
+                     else:
+                       assert false, "Unimplemented size of float!"
+                       0
+    DecimalsThatAreNonTerminatingAsBinary: array[6, BiggestFloat] = [0.1, 0.2,
+                                                                     0.3, 0.4,
+                                                                     0.6, 0.9]
+  var exponents: seq[int]
+  for decimal in DecimalsThatAreNonTerminatingAsBinary:
+    let
+      nonTerminatingBinary = decimalToBinary(decimal, BitsOfMantissa)
+      floatRepresention = binaryToDecimal(nonTerminatingBinary)
+      error = decimal - floatRepresention
+    exponents.add (int floor log10 error) * -1
+  (min exponents) - 1
+
+func toReal[T: Number|float](n: T): Real =
+  when n is Real: n
+  else: Real(value: float(n), precision: RealMaxPrecision)
+
+func round(n: Real): Real =
+  let
+    exponent = floor log10 n.value
+    mantissa = n.value * (float 10).pow(-exponent)
+  result = Real(value: mantissa.round(n.precision - 1) *
+                       (float 10).pow(exponent),
+                precision: n.precision)
+
+converter toLogical(b: bool): Logical =
+  case b
+  of true: logTrue
+  of false: logFalse
+
+func SizeOf(a: Array|List|Bag|Set): Positive =
+  when a is Array:
+    case a.optionalValues
+    of true: a.maybeValue.len
+    of false: a.value.len
+  else: a.value.len
+func len(a: Array|List|Bag|Set): Positive = SizeOf a
+
+func length(s: EncodedString|SimpleString): Positive =  s.value.len
+func len(s: EncodedString|SimpleString): Positive = s.length
+
+
+
 #### Arithmatic Operators
+func `+`(n: Real): Real = n
+func `-`(n: Real): Real =
+  result = Real(value: -n.value, precision: n.precision)
+func `+`[T: Number](n: Indeterminate[T]): Indeterminate[T] = n
+func `-`[T: Number](n: Indeterminate[T]): Indeterminate[T] =
+  if n.isNone: n
+  else: some -n
+
+
+template generateIndeterminateArithmaticFor(operator: untyped;
+                                            input, output: typedesc): untyped =
+  func `operator`[T: Indeterminate[input]|input;
+                  U: Indeterminate[input]|input](l: T; r: U):
+                                                        Indeterminate[output] =
+    when l is Indeterminate and r is Indeterminate:
+      if l.isNone or r.isNone: none output
+      else: some operator((get l) , (get r))
+    elif l is Indeterminate:
+      if l.isNone: none output
+      else: some operator((get l), r)
+    else:
+      if r.isNone: none output
+      else: some operator(l, (get r))
+
+template generateArithmaticFor(operator: untyped; doInt=true): untyped =
+  func `operator`(l, r: Real): Real =
+    result = Real(value: operator(l.value, r.value),
+                  precision: min(l.precision, r.precision))
+  func `operator`[T: Number; U: Number](l: T; r: U): Real =
+    operator(toReal(l), toReal(r))
+
+  when doInt: generateIndeterminateArithmaticFor operator, int, int
+  generateIndeterminateArithmaticFor operator, Number, Real
+
+generateArithmaticFor `+`
+generateArithmaticFor `-`
+generateArithmaticFor `*`
+
+generateArithmaticFor `/`, false
+generateIndeterminateArithmaticFor `/`, int, float
+
+
+func `**`(base, exponent: int): int =
+  ##[EXPRESS defines that this function always returns an integer, even when
+  the exponent is negative. Why? Who knows. So this will round the result
+  to the nearest integer and pretend that it is correct.]##
+  let exponentIsNegative = exponent < 0
+  result = if exponentIsNegative: int round pow(float(base), float exponent)
+           else: base ^ exponent
+
+func `**`(base, exponent: Real): Real =
+  result = Real(value: pow(base.value, exponent.value),
+                precision: min(base.precision, exponent.precision))
+func `**`[T: Number; U: Number](l: T; r: U): Real = toReal(l) ** toReal(r)
+generateIndeterminateArithmaticFor `**`, int, int
+generateIndeterminateArithmaticFor `**`, Number, Real
+
+func truncate(n: Real): int = int n.value
+
+func `mod`[T: Number; U: Number](l: T; r: U): int =
+  result = when l is int: l mod truncate r
+           else:
+             when r is int: (truncate l) mod r
+             else: (truncate l) mod (truncate r)
+  result = abs result
+  let rightIsNegative = r < 0
+  if rightIsNegative: result = result *  -1
+generateIndeterminateArithmaticFor `mod`, Number, int
+
+func `div`[T: Number; U: Number](l: T; r: U): int =
+  when l is int: l div truncate r
+  else:
+    when r is int: (truncate l) div r
+    else: (truncate l) div (truncate r)
+generateIndeterminateArithmaticFor `div`, Number, int
+
+#### Relational operators
+### Numerical comparisons
+template generateRelationsFor(operator: untyped): untyped =
+  func `operator`[T: Number; U: Number](l: T; r: U): bool =
+    when l is Real and r is Real: operator(l.value, r.value)
+    elif l is Real: operator(l.value, r)
+    else: operator(l, r.value)
+
+generateRelationsFor `==`
+generateRelationsFor `<`
+generateRelationsFor `<=`
+
+template `<>`(l, r: untyped): untyped = l != r
+
+### Sequence comparisons
+func `<`(l, r: Rune): bool = l <% r
+type
+  Comparison = enum
+    compEq, compGt, compLt
+  ComparableSequence = concept x
+    type Contained = typeOf(x.value[int])
+    Contained == Contained is bool
+    Contained < Contained is bool
+    type LengthMeasure = typeOf(x.value.len)
+    LengthMeasure == LengthMeasure is bool
+    LengthMeasure < LengthMeasure is bool
+
+func compare(a, b: ComparableSequence): Comparison =
+  for (valueA, valueB) in zip(a.value, b.value):
+    if valueA == valueB: continue
+    elif valueA < valueB: return compLt
+    else: return compGt
+  let
+    aLength = a.value.len
+    bLength = b.value.len
+  result = if aLength == bLength: compEq
+           elif aLength > bLength: compGt
+           else: compLt
+
+func `==`(l, r: ComparableSequence): bool =
+  case compare(l, r)
+  of compEq: true
+  else: false
+
+func `<`(l, r: ComparableSequence): bool =
+  case compare(l, r)
+  of compLt: true
+  else: false
+
+func `<=`(l, r: ComparableSequence): bool =
+  case compare(l, r)
+  of compLt, compEq: true
+  else: false
