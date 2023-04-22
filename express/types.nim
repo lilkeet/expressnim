@@ -1,7 +1,10 @@
 
 {.experimental: "strictFuncs".}
 
-import std/[options, tables, unicode, sets, math, sequtils]
+import
+  std/[tables, unicode, sets, math, sequtils],
+  indeterminate
+import std/options except `==`, `$`
 
 #### Simple data types
 type
@@ -12,9 +15,6 @@ type
   Real = object
     value: float
     precision: Positive ## Significant digits.
-
-  Logical = enum
-    logFalse, logUnknown, logTrue
 
   String = object of RootObj
     fixed: bool
@@ -31,8 +31,6 @@ type
     value: seq[Bit] ## Cannot be empty!
     fixed: bool
     maxWidth: Option[Positive]
-
-  Indeterminate[T] = Option[T]
 
 #### Aggregation data types
 type
@@ -199,37 +197,18 @@ func `-`[T: Number](n: Indeterminate[T]): Indeterminate[T] =
   else: some -n
 
 
-template generateIndeterminateArithmaticFor(operator: untyped;
-                                            input, output: typedesc): untyped =
-  func `operator`[T: Indeterminate[input]|input;
-                  U: Indeterminate[input]|input](l: T; r: U):
-                                                        Indeterminate[output] =
-    when l is Indeterminate and r is Indeterminate:
-      if l.isNone or r.isNone: none output
-      else: some operator((get l) , (get r))
-    elif l is Indeterminate:
-      if l.isNone: none output
-      else: some operator((get l), r)
-    else:
-      if r.isNone: none output
-      else: some operator(l, (get r))
 
-template generateArithmaticFor(operator: untyped; doInt=true): untyped =
+template generateArithmaticFor(operator: untyped): untyped =
   func `operator`(l, r: Real): Real =
     result = Real(value: operator(l.value, r.value),
                   precision: min(l.precision, r.precision))
   func `operator`[T: Number; U: Number](l: T; r: U): Real =
     operator(toReal(l), toReal(r))
 
-  when doInt: generateIndeterminateArithmaticFor operator, int, int
-  generateIndeterminateArithmaticFor operator, Number, Real
-
 generateArithmaticFor `+`
 generateArithmaticFor `-`
 generateArithmaticFor `*`
-
-generateArithmaticFor `/`, false
-generateIndeterminateArithmaticFor `/`, int, float
+generateArithmaticFor `/`
 
 
 func `**`(base, exponent: int): int =
@@ -244,8 +223,6 @@ func `**`(base, exponent: Real): Real =
   result = Real(value: pow(base.value, exponent.value),
                 precision: min(base.precision, exponent.precision))
 func `**`[T: Number; U: Number](l: T; r: U): Real = toReal(l) ** toReal(r)
-generateIndeterminateArithmaticFor `**`, int, int
-generateIndeterminateArithmaticFor `**`, Number, Real
 
 func truncate(n: Real): int = int n.value
 
@@ -257,14 +234,12 @@ func `mod`[T: Number; U: Number](l: T; r: U): int =
   result = abs result
   let rightIsNegative = r < 0
   if rightIsNegative: result = result *  -1
-generateIndeterminateArithmaticFor `mod`, Number, int
 
 func `div`[T: Number; U: Number](l: T; r: U): int =
   when l is int: l div truncate r
   else:
     when r is int: (truncate l) div r
     else: (truncate l) div (truncate r)
-generateIndeterminateArithmaticFor `div`, Number, int
 
 #### Relational operators
 ### Numerical comparisons
