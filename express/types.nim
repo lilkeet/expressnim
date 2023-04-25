@@ -3,7 +3,8 @@
 
 import
   std/[tables, unicode, sets, math, sequtils],
-  indeterminate
+  indeterminate,
+  ../utils/funcBlock
 import std/options except `==`, `$`
 
 #### Simple data types
@@ -11,6 +12,8 @@ type
   Simple = Number or Logical or String or Binary
 
   Number = Real or int
+
+  Logical = ?bool
 
   Real = object
     value: float
@@ -107,7 +110,7 @@ type
   # Named already exists
 
 #### Basic utilities
-const RealMaxPrecision = block:
+const RealMaxPrecision = funcBlock(int):
   func decimalToBinary(decimal: BiggestFloat, n: int): tuple[integer,
                                                             fraction: Binary] =
     var integerPart = int decimal
@@ -169,18 +172,13 @@ func round(n: Real): Real =
                        (float 10).pow(exponent),
                 precision: n.precision)
 
-converter toLogical(b: bool): Logical =
-  case b
-  of true: logTrue
-  of false: logFalse
-
-func SizeOf(a: Array|List|Bag|Set): Positive =
+func sizeOf(a: Array|List|Bag|Set): Positive =
   when a is Array:
     case a.optionalValues
     of true: a.maybeValue.len
     of false: a.value.len
   else: a.value.len
-func len(a: Array|List|Bag|Set): Positive = SizeOf a
+func len(a: Array|List|Bag|Set): Positive = sizeOf a
 
 func length(s: EncodedString|SimpleString): Positive =  s.value.len
 func len(s: EncodedString|SimpleString): Positive = s.length
@@ -195,8 +193,6 @@ func `+`[T: Number](n: Indeterminate[T]): Indeterminate[T] = n
 func `-`[T: Number](n: Indeterminate[T]): Indeterminate[T] =
   if n.isNone: n
   else: some -n
-
-
 
 template generateArithmaticFor(operator: untyped): untyped =
   func `operator`(l, r: Real): Real =

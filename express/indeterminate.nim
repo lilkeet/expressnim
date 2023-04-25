@@ -1,6 +1,6 @@
 
 ##[
-This module implements types which encapsulate an Indeterminate value.
+This module implements types which encapsulate an Indeterminate `?` value.
 A value of type `?T` either contains a value `x` (represented as
 `some(x)`) or is empty (`none(T)`).
 This can be useful when you have a value that can be present or not.
