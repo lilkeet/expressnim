@@ -18,6 +18,6 @@ open-source ones.
 The hope is that this will lead to some much need innovation in the CAD/CAM
 industry.
 
-TODO/GOALS:
+### TODO/GOALS:
   + Create a standard environment for handling STEP files.
   + Create a functional environment for handling STEP files.
