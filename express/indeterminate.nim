@@ -54,6 +54,8 @@ func `??`*[T](x: T): ?T =
   ## Returns an indeterminate form of x.
   indeterminate x
 
+func exists*[T](x: ?T): bool = x.isSome
+
 # Nim's concepts seem to bind before templates, so each of these must be typed
 # out explicately.
 type

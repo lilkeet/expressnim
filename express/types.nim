@@ -2,11 +2,12 @@
 {.experimental: "strictFuncs".}
 
 import
-  std/[tables, unicode, sets, math, sequtils],
+  std/[tables, unicode, sets, math, sequtils, sugar],
   indeterminate,
   ../utils/funcBlock
 import std/options except `==`, `$`
 
+### Data types
 #### Simple data types
 type
   Simple = Number or Logical or String or Binary
@@ -151,13 +152,13 @@ const RealMaxPrecision = funcBlock(int):
     DecimalsThatAreNonTerminatingAsBinary: array[6, BiggestFloat] = [0.1, 0.2,
                                                                      0.3, 0.4,
                                                                      0.6, 0.9]
-  var exponents: seq[int]
-  for decimal in DecimalsThatAreNonTerminatingAsBinary:
-    let
-      nonTerminatingBinary = decimalToBinary(decimal, BitsOfMantissa)
-      floatRepresention = binaryToDecimal(nonTerminatingBinary)
-      error = decimal - floatRepresention
-    exponents.add (int floor log10 error) * -1
+  let exponents: seq[int] = collect:
+    for decimal in DecimalsThatAreNonTerminatingAsBinary:
+      let
+        nonTerminatingBinary = decimalToBinary(decimal, BitsOfMantissa)
+        floatRepresention = binaryToDecimal(nonTerminatingBinary)
+        error = decimal - floatRepresention
+      (int floor log10 error) * -1
   (min exponents) - 1
 
 func toReal[T: Number|float](n: T): Real =
@@ -172,16 +173,21 @@ func round(n: Real): Real =
                        (float 10).pow(exponent),
                 precision: n.precision)
 
-func sizeOf(a: Array|List|Bag|Set): Positive =
-  when a is Array:
-    case a.optionalValues
-    of true: a.maybeValue.len
-    of false: a.value.len
-  else: a.value.len
-func len(a: Array|List|Bag|Set): Positive = sizeOf a
+type
+  MeasurableSequence = concept x
+    x.value.len is int
+  MeasurableSet = concept x
+    x.value.card is int
+func len(x: MeasurableSequence): int = x.value.len
+func card(x: MeasurableSet): int = x.value.card
 
-func length(s: EncodedString|SimpleString): Positive =  s.value.len
-func len(s: EncodedString|SimpleString): Positive = s.length
+func sizeOf(a: Array|List|Bag|Set): int =
+  when a is MeasurableSequence: a.len else: a.card
+
+func length(s: EncodedString|SimpleString): Positive =
+  let tmp = s.len
+  assert tmp > 0, "Length of an Express string cannot be zero!"
+  tmp
 
 
 
@@ -194,17 +200,17 @@ func `-`[T: Number](n: Indeterminate[T]): Indeterminate[T] =
   if n.isNone: n
   else: some -n
 
-template generateArithmaticFor(operator: untyped): untyped =
+template generateArithmaticOperatorFor(operator: untyped): untyped =
   func `operator`(l, r: Real): Real =
     result = Real(value: operator(l.value, r.value),
                   precision: min(l.precision, r.precision))
   func `operator`[T: Number; U: Number](l: T; r: U): Real =
     operator(toReal(l), toReal(r))
 
-generateArithmaticFor `+`
-generateArithmaticFor `-`
-generateArithmaticFor `*`
-generateArithmaticFor `/`
+generateArithmaticOperatorFor `+`
+generateArithmaticOperatorFor `-`
+generateArithmaticOperatorFor `*`
+generateArithmaticOperatorFor `/`
 
 
 func `**`(base, exponent: int): int =
@@ -257,12 +263,10 @@ type
   Comparison = enum
     compEq, compGt, compLt
   ComparableSequence = concept x
+    x is MeasurableSequence
     type Contained = typeOf(x.value[int])
-    Contained == Contained is bool
-    Contained < Contained is bool
-    type LengthMeasure = typeOf(x.value.len)
-    LengthMeasure == LengthMeasure is bool
-    LengthMeasure < LengthMeasure is bool
+    (Contained == Contained) is bool
+    (Contained < Contained) is bool
 
 func compare(a, b: ComparableSequence): Comparison =
   for (valueA, valueB) in zip(a.value, b.value):
@@ -270,8 +274,8 @@ func compare(a, b: ComparableSequence): Comparison =
     elif valueA < valueB: return compLt
     else: return compGt
   let
-    aLength = a.value.len
-    bLength = b.value.len
+    aLength = a.len
+    bLength = b.len
   result = if aLength == bLength: compEq
            elif aLength > bLength: compGt
            else: compLt
@@ -290,3 +294,23 @@ func `<=`(l, r: ComparableSequence): bool =
   case compare(l, r)
   of compLt, compEq: true
   else: false
+
+### Logical comparisions
+func `==`(l: bool; r: ?bool): bool =
+  if not r.exists: false else: (get r) == l
+func `==`(l: ?bool; r: bool): bool = r == l
+func `==`(l, r: ?bool): bool =
+  if (l.exists and r.exists): (get l) == (get r)
+  else: (l.exists == r.exists)
+
+
+#### Arithmatic
+template generateArithmaticFuncFor(f: untyped): untyped =
+  # Generates a function that works on a `Real` based upon an already
+  # existing function.
+  func f(n: Real): Real = Real(value: f(n.value), precision: n.precision)
+
+generateArithmaticFuncFor abs
+generateArithmaticFuncFor acos
+generateArithmaticFuncFor asin
+generateArithmaticFuncFor abs
