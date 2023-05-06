@@ -27,7 +27,7 @@ type
     value: seq[Rune] ## Runes must be in `{'\x20'..'\x7E',
                      ##                    '\xA0'..Rune(0x10FFFE)}.
                      ## Cannot be empty!
-  SimpleString = object of String
+  SimpleString* = object of String
     value: string ## Chars must be in `ExpressChars` from `parse.nim`.
 
   Bit = bool
@@ -189,6 +189,18 @@ func length(s: EncodedString|SimpleString): Positive =
   assert tmp > 0, "Length of an Express string cannot be zero!"
   tmp
 
+func newSimpleString(s: string): Option[SimpleString] =
+  ## Converts a string to a simple string.
+  ## If an illegal value is found in the string, `none` is returned.
+  result = some(SimpleString(value: ""))
+  template failure(): untyped = return none(SimpleString)
+  if s.len == 0: failure()
+  for character in s:
+    const TokenChars = {'\x21'..'\x7E'}
+    if character notin TokenChars: failure()
+    else: (get result).value.add character
+
+
 
 
 #### Arithmatic Operators
@@ -305,7 +317,7 @@ func `==`(l, r: ?bool): bool =
 
 
 #### Arithmatic
-template generateArithmaticFuncFor(f: untyped): untyped =
+#[template generateArithmaticFuncFor(f: untyped): untyped =
   # Generates a function that works on a `Real` based upon an already
   # existing function.
   func f(n: Real): Real = Real(value: f(n.value), precision: n.precision)
@@ -314,3 +326,4 @@ generateArithmaticFuncFor abs
 generateArithmaticFuncFor acos
 generateArithmaticFuncFor asin
 generateArithmaticFuncFor abs
+]#
