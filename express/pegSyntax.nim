@@ -170,7 +170,7 @@ precision <- numeric_expression
 width <- numeric_expression
 width_spec <- [(]  width  [)]  FIXED?
 
-binaryTypeDesc <- BINARY  (width_spec?)
+binaryTypeDesc <- BINARY width_spec?
 boolTypeDesc <- BOOLEAN
 intTypeDesc <- INTEGER
 logicalTypeDesc <- LOGICAL

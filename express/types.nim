@@ -1,11 +1,11 @@
 
-{.experimental: "strictFuncs".}
-
 import
   std/[tables, unicode, sets, math, sequtils, sugar],
   indeterminate,
-  ../utils/funcBlock
+  ../utils/[funcBlock, widthRestrictedSeq]
 import std/options except `==`, `$`
+
+{.experimental: "strictFuncs".}
 
 ### Data types
 #### Simple data types
@@ -20,21 +20,11 @@ type
     value: float
     precision: Positive ## Significant digits.
 
-  String = object of RootObj
-    fixed: bool
-    maxWidth: Option[Positive]
-  EncodedString =  object of String
-    value: seq[Rune] ## Runes must be in `{'\x20'..'\x7E',
-                     ##                    '\xA0'..Rune(0x10FFFE)}.
-                     ## Cannot be empty!
-  SimpleString* = object of String
-    value: string ## Chars must be in `ExpressChars` from `parse.nim`.
+  String* = WidthRestrictedSeq[Rune] ## Runes must be in `{'\x20'..'\x7E',
+                                     ##                 '\xA0'..Rune(0x10FFFE)}.
 
-  Bit = bool
-  Binary = object
-    value: seq[Bit] ## Cannot be empty!
-    fixed: bool
-    maxWidth: Option[Positive]
+  Bit* = bool
+  Binary* = WidthRestrictedSeq[Bit]
 
 #### Aggregation data types
 type
@@ -118,46 +108,47 @@ const RealMaxPrecision = funcBlock(int):
     block convertIntegerPart:
       while integerPart > 0:
         let newDigit: Bit = if integerPart mod 2 == 0: off else: on
-        result.integer.value = newDigit & result.integer.value
+        result.integer = newDigit & result.integer
         integerPart = integerPart div 2
     block convertFractionalPart:
       var fractionalPart = decimal - BiggestFloat integerPart
       for _ in 1..n:
         fractionalPart *= 2
         if fractionalPart >= 1:
-          result.fraction.value.add on
+          result.fraction.add on
           fractionalPart -= 1
         else:
-          result.fraction.value.add off
+          result.fraction.add off
 
   func binaryToDecimal(binaryNumber: tuple[integer,
                                            fraction: Binary]): BiggestFloat =
     block convertIntegerPart:
       var powerOfTwo = 1.0
-      for index in countdown(binaryNumber.integer.value.high, 0):
-        if binaryNumber.integer.value[index] == on: result += powerOfTwo
+      for index in countdown(binaryNumber.integer.high, 0):
+        if binaryNumber.integer[index] == on: result += powerOfTwo
         powerOfTwo *= 2
     block convertIntegerPart:
       var powerOfTwo = 0.5
-      for bit in binaryNumber.fraction.value:
+      for bit in binaryNumber.fraction:
         if bit == on: result += powerOfTwo
         powerOfTwo *= 0.5
 
   const
-    BitsOfMantissa = if sizeOf(float) == 8: 52
-                     elif sizeOf(float) == 4: 23
+    BitsOfMantissa = case sizeOf(float)
+                     of 8: 52
+                     of 4: 23
                      else:
                        assert false, "Unimplemented size of float!"
-                       0
-    DecimalsThatAreNonTerminatingAsBinary: array[6, BiggestFloat] = [0.1, 0.2,
-                                                                     0.3, 0.4,
-                                                                     0.6, 0.9]
+                       -1
+    SampleDecimals: array[9, BiggestFloat] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7,
+                                              0.8, 0.9]
   let exponents: seq[int] = collect:
-    for decimal in DecimalsThatAreNonTerminatingAsBinary:
+    for decimal in SampleDecimals:
       let
         nonTerminatingBinary = decimalToBinary(decimal, BitsOfMantissa)
         floatRepresention = binaryToDecimal(nonTerminatingBinary)
         error = decimal - floatRepresention
+      if error == 0.0: continue
       (int floor log10 error) * -1
   (min exponents) - 1
 
@@ -176,6 +167,9 @@ func round(n: Real): Real =
 type
   MeasurableSequence = concept x
     x.value.len is int
+    type Contained = x.value[int].type
+    x.value[BackwardsIndex].type is Contained
+
   MeasurableSet = concept x
     x.value.card is int
 func len(x: MeasurableSequence): int = x.value.len
@@ -184,24 +178,18 @@ func card(x: MeasurableSet): int = x.value.card
 func sizeOf(a: Array|List|Bag|Set): int =
   when a is MeasurableSequence: a.len else: a.card
 
-func length(s: EncodedString|SimpleString): Positive =
+func length(s: String): Positive =
   let tmp = s.len
   assert tmp > 0, "Length of an Express string cannot be zero!"
   tmp
 
-func newSimpleString(s: string): Option[SimpleString] =
-  ## Converts a string to a simple string.
-  ## If an illegal value is found in the string, `none` is returned.
-  result = some(SimpleString(value: ""))
-  template failure(): untyped = return none(SimpleString)
-  if s.len == 0: failure()
-  for character in s:
-    const TokenChars = {'\x21'..'\x7E'}
-    if character notin TokenChars: failure()
-    else: (get result).value.add character
-
-
-
+func newBinary*(value: openarray[Bit]): Binary =
+  newWidthRestrictedSeq[Bit](value)
+func newBinary*(value: openarray[Bit]; fixed: bool;
+                size:Positive=value.len): Binary =
+  newWidthRestrictedSeq[Bit](value, fixed, size)
+func newBinary*(value: openarray[Bit]; maxWidth: Positive): Binary =
+  newWidthRestrictedSeq[Bit](value, maxWidth)
 
 #### Arithmatic Operators
 func `+`(n: Real): Real = n
