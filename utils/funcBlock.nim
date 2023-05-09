@@ -23,6 +23,6 @@ template funcBlock*(returning: typedesc; body: untyped): untyped =
     assert myProc() == ""
 
   block:
-    func invisible(): returning =
+    func insideFuncBlock(): returning =
       body
-    invisible()
+    insideFuncBlock()

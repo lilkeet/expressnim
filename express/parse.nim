@@ -1,8 +1,7 @@
 
 import
-  std/[pegs, unicode, parseutils],
-  types,
-  ../utils/[widthRestrictedSeq]
+  std/[unicode, parseutils, strutils],
+  types
 
 {.experimental: "strictFuncs".}
 
@@ -11,7 +10,7 @@ func parseBinaryLit*(input: string; output: var Binary; start = 0): Natural =
   ## Parses the literal form of a `Binary` and stores it in `output`.
   ## Returns the length parsed, or 0 if an error occurred.
   runnableExamples:
-    import types, ../utils/widthRestrictedSeq
+    import types
     block:
       let
         whiteSpace = "     "
@@ -32,7 +31,7 @@ func parseBinaryLit*(input: string; output: var Binary; start = 0): Natural =
     return 0
   result.inc
 
-  while result < input.len:
+  while start + result < input.len:
     case input[start + result]
     of '0': output.add off
     of '1': output.add on
@@ -41,13 +40,13 @@ func parseBinaryLit*(input: string; output: var Binary; start = 0): Natural =
       return
     result.inc
 
-proc parseStringLit*(input: string; output: var String; start = 0): Natural =
+func parseStringLit*(input: string; output: var String; start = 0): Natural =
   ## Parses the literal form of a `String` (an EXPRESS string) and stores it
   ## in `output`.
   ## Returns the length parsed, or 0 if an error occurred.
   ## Works with both simple strings and encoded strings.
   runnableExamples:
-    import types, ../utils/widthRestrictedSeq
+    import types
     block:
       let
         prefix = "not\nrelevant"
@@ -78,72 +77,66 @@ proc parseStringLit*(input: string; output: var String; start = 0): Natural =
       let faultySimple = "'Cannot span multiple \n lines'"
       var output: String
       assert faultySimple.parseStringLit(output) == 0
-      assert $output == ""
-  let stringLit = peg"""stringLit <- encodedLit / simpleLit
-      # Simple string literals:
-      escapedApostrophe <- ['] {[']} # Only capture one per escaped.
-      expressChar <- [!-~] # Every valid character in Express.
-      notApostropheOrNewLine <- !(['] / \n) {expressChar}
-      simpleLit <- ['] (escapedApostrophe / notApostropheOrNewLine)* [']
+      assert $output == "Cannot span multiple "
 
-      # Encoded string literals:
-      hexdigit <- \d / [a-fA-F]
-      octet <- {hexdigit hexdigit}
-      encodedChar <- octet octet octet octet
-      encodedLit <- ["] encodedChar+ ["]"""
+  var pos = start + 1
 
-  type StringKind = enum
-    simple, encoded
-  var state: StringKind # The current style of String literal being parsed.
+  template failure(): void = return 0
+  template success(): void = return (pos - start) + 1
 
-  # EXPRESS's encoded strings take the form of UTF-32, where each byte is
-  # represented as an asci hexadecimal pair. Since std/unicode's Runes are
-  # also UTF-32, we can just parse each hexadecimal pair, convert it to an int,
-  # shift it over to the correct position, and `or` them together into a Rune.
-  type
-    Octet = byte # One hexadecimal pair
-    EncodedChar = array[4, Octet] # One Rune
-  func toRune(x: EncodedChar): Rune =
-    result = Rune(0)
-    assert sizeOf(Rune) == sizeOf(int32)
-    var count = 0
-    for index in countdown(x.len, 0):
-      const BitsPerByte = 8
-      let bitsToShift = count * BitsPerByte
-      result = Rune((int32 result) or ((int32 x[index]) shl bitsToShift))
-      count.inc
+  const
+    SimpleMarker = '\''
+    EncodedMarker = '"'
+  case input[start]
+  of SimpleMarker:
+    func add(container: var String; toAdd: char) =
+      # Normally unicode doesn't directly match up with Nim's char set
+      # (the asci chars), but EXPRESS only allows the first 126 in simple string
+      # literals, which are the ones that do match up.
+      container.add Rune(toAdd)
 
-  var encodedState: tuple[rune: EncodedChar, index: range[0..EncodedChar.high]]
-  var willBeAddedToOutput: String
-  let myParse = stringLit.eventParser:
-    pkNonTerminal:
-      enter:
-        # Update our state upon which type we are attempting to parse.
-        state = case p.nt.name
-                of "simpleLit": simple
-                of "encodedLit": encoded
-                else:
-                  assert false, "mismatched peg nonterminal"
-                  simple
-    pkCapture:
-      leave:
-        let successful = length != -1
-        if successful:
-          case state
-          of simple:
-            # Normally unicode doesn't directly match up with Nim's char set
-            # (the asci chars), but EXPRESS only allows the first 126, which
-            # are the ones that do match up.
-            willBeAddedToOutput.add Rune(input[start])
-          of encoded:
-            discard s.parseHex(encodedState.rune[encodedState.index], start, 2)
-            let filledInLastOctet = encodedState.index == encodedState.rune.high
-            if filledInLastOctet:
-              encodedState.index = 0
-              willBeAddedToOutput.add toRune(encodedState.rune)
-            else: encodedState.index.inc
-  const PegFailure = -1 # The input is not a simple nor an encoded string.
-  result = myParse(input)
-  case result
-  of PegFailure: result = 0
-  else: output &= willBeAddedToOutput
+    while pos <= input.high:
+      let current = input[pos]
+
+      const
+        ExpressCharacters = {'\x9', '\xA', '\xD', '\x20'..'\x7E'}
+        Valid = ExpressCharacters - NewLines
+        Invalid = AllChars - Valid
+      case current
+      of Valid - {SimpleMarker}: output.add current
+      of SimpleMarker:
+        let reachedEndOfInput = pos == input.high
+        if reachedEndOfInput: success()
+
+        let
+          next = input[pos + 1]
+          atEscapedMarker = next == SimpleMarker
+        if atEscapedMarker:
+          output.add SimpleMarker
+          inc pos
+        else: success()
+      of Invalid: failure()
+      inc pos
+
+  of EncodedMarker:
+    #[EXPRESS's encoded strings take the form of UTF-32, where each byte is
+    represented as an asci hexadecimal pair. Since std/unicode's Runes are
+    also UTF-32, we can just parse each sequence of 8 hexadecimal characters
+    into an int32 and convert that into a Rune.]#
+    while pos < input.high and input[pos + 1] != EncodedMarker:
+      var current: int32
+      const
+        CharsPerByte = 2
+        CharsPerRune = sizeOf(int32) * CharsPerByte
+      let charsParsed: range[0..CharsPerRune] = input.parseHex(current,
+                                                            start=pos,
+                                                            maxLen=CharsPerRune)
+      case charsParsed
+      of CharsPerRune:
+        output.add Rune(current)
+        inc pos, CharsPerRune
+      else: failure()
+    success()
+  else:
+    # Not at beginning of either an encoded nor a simple string.
+    failure()

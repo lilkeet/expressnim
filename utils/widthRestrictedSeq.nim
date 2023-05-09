@@ -11,6 +11,8 @@ type
     of unrestricted, fixed: discard
     of max: maxWidth: Positive
 
+  WRSK = WidthRestrictedSeqKind
+
 func len*[T](container: WidthRestrictedSeq[T]): Natural =
   container.value.len
 
@@ -46,14 +48,14 @@ func newWidthRestrictedSeq*[T](value: openarray[T]): WidthRestrictedSeq[T] =
 
 func newWidthRestrictedSeq*[T](value: openarray[T]; fixed: bool;
                                size:Positive=value.len): WidthRestrictedSeq[T] =
-  result = WidthRestrictedSeq[T](value: newSeq(size), kind: fixed)
+  result = WidthRestrictedSeq[T](value: newSeq[T](size), kind: WRSK.fixed)
   for index, item in value:
     result.value[index] = item
 
 func newWidthRestrictedSeq*[T](value: openarray[T];
                                maxWidth: Positive): WidthRestrictedSeq[T] =
-  result = WidthRestrictedSeq[T](value: newSeqOfCap(maxWidth), kind: max,
-                              maxWidth: maxWidth)
+  result = WidthRestrictedSeq[T](value: newSeqOfCap[T](maxWidth), kind: max,
+                                 maxWidth: maxWidth)
   for index, item in value:
     result.value[index] = item
 
@@ -82,5 +84,3 @@ func `&=`*[T](l: var WidthRestrictedSeq[T]; r: WidthRestrictedSeq[T]) =
 iterator items*[T](container: WidthRestrictedSeq[T]): T =
   for item in container.value:
     yield item
-
-func `$`*[T](container: WidthRestrictedSeq[T]): string = $container.value

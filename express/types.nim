@@ -191,6 +191,23 @@ func newBinary*(value: openarray[Bit]; fixed: bool;
 func newBinary*(value: openarray[Bit]; maxWidth: Positive): Binary =
   newWidthRestrictedSeq[Bit](value, maxWidth)
 
+func `$`*(bin: Binary): string =
+  result = "%"
+  for bit in bin:
+    case bit
+    of on: result.add '1'
+    of off: result.add '0'
+
+func `$`*(s: String): string =
+  var holder: seq[Rune]
+  for rune in s:
+    holder.add rune
+  result = $holder
+
+export widthRestrictedSeq.`[]`, widthRestrictedSeq.`[]=`,
+       widthRestrictedSeq.len, widthRestrictedSeq.add, widthRestrictedSeq.`&`,
+       widthRestrictedSeq.`&=`
+
 #### Arithmatic Operators
 func `+`(n: Real): Real = n
 func `-`(n: Real): Real =
