@@ -102,3 +102,17 @@ block idents:
       together = prefix & example
     var output = ident("")
     assert together.parseIdent(output, prefix.len) == example.len
+
+
+block whitespaces:
+  block:
+    let
+      prefix = "first line hehe"
+      tailRemark = "--who cares really\n"
+      nextLine = "afterthis"
+      together = prefix & tailRemark & nextLine
+    assert together.whitespace(prefix.len) == tailRemark.len
+
+  block:
+    let embeddedRemark = "(* first layer (* second \n layer(* third *)*) \n*) "
+    assert embeddedRemark.whitespace() == embeddedRemark.len

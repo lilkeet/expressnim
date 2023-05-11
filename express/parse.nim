@@ -1,7 +1,8 @@
 
 import
-  std/[unicode, parseutils, strutils, pegs],
+  std/[unicode, parseutils, strutils],
   types, indeterminate, ast
+import std/pegs except whitespace
 
 {.experimental: "strictFuncs".}
 
@@ -141,24 +142,6 @@ func parseStringLit*(input: string; output: var String; start = 0): Natural =
     # Not at beginning of either an encoded nor a simple string.
     failure()
 
-#[let whiteSpace = peg"""whiteSpace <- (normalWhiteSpace / remark)+
-#### Normal whitespace
-horizontalTab <- \009
-lineFeed <- \010
-carriageReturn <- \013
-normalWhiteSpace <- horizontalTab / lineFeed / carriageReturn / [ ] / \n
-
-#### Remarks
-# Remarks must be treated as whitespace, in order to meet the ISO's
-# requirements to be an EXPRESS parser.
-embeddedMarker <- [()*]
-embeddedRemark <- "(*" (embeddedRemark / (!embeddedMarker expressChar))* "*)"
-tailRemark <- "--" (!\n expressChar)* \n
-
-remark <- embeddedRemark / tailRemark
-"""]#
-
-
 func parseRealLit*(input: string; output: var Real; start = 0): Natural =
   ## Parses the literal form of a `String` (an EXPRESS string) and stores it
   ## in `output`.
@@ -213,14 +196,39 @@ func parseLogicalLit*(input: string; output: var Logical; start = 0): Natural =
       output = Outs[kind]
       return MatchLens[kind]
 
+const PegFailure = -1
+
 func parseIdent*(input: string; output: var ExpressNode;
                  start = 0): Natural =
   ## Parses the literal an EXPRESS identifer and stores it in `output`.
   ## Returns the length parsed, or 0 if an error occurred.
   var captures: array[1, string]
-  result = input.matchLen(peg" {\a \w*} ", captures, start)
-  const PegFailure = -1
-  case result
+  let pegResult = input.matchLen(peg" {\a \w*} ", captures, start)
+  case pegResult
   of PegFailure: result = 0
-  else: output = ident(captures[0])
+  else:
+    output = ident(captures[0])
+    result = pegResult
 
+func whitespace*(input: string; start = 0): Natural =
+  ## Returns the length of the EXPRESS whitespace found starting at `start`
+  ## in `input`.
+  let whiteSpace = peg"""whiteSpace <- (normalWhiteSpace / remark)*
+    #### Normal whitespace
+    horizontalTab <- \009
+    lineFeed <- \010
+    carriageReturn <- \013
+    normalWhiteSpace <- horizontalTab / lineFeed / carriageReturn / [ ] / \n
+
+    #### Remarks
+    # Remarks must be treated as whitespace, in order to meet the ISO's
+    # requirements to be an EXPRESS parser.
+    expressChar <- [!-~] / normalWhiteSpace # Every valid character in Express.
+    embeddedMarker <- [()*]
+    notEmbeddedMarker <- !embeddedMarker expressChar
+    embeddedRemark <- "(*" (embeddedRemark / notEmbeddedMarker)* "*)"
+
+    tailRemark <- "--" (!\n expressChar)* \n
+
+    remark <- embeddedRemark / tailRemark"""
+  result = input.matchLen(whiteSpace, start)
