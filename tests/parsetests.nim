@@ -11,7 +11,7 @@ discard """
 
 import
   std/[math],
-  ../express/[types, parse, indeterminate]
+  ../express/[types, parse, indeterminate, ast]
 
 block binaryLit:
   block:
@@ -93,3 +93,12 @@ block logicalLit:
 
     assert output is Indeterminate[bool]
     assert output is ?bool
+
+block idents:
+  block:
+    let
+      prefix = "nono"
+      example = "myIdent"
+      together = prefix & example
+    var output = ident("")
+    assert together.parseIdent(output, prefix.len) == example.len

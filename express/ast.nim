@@ -5,12 +5,18 @@ import types
 
 type
   ExpressNodeKind* = enum
-    empty, binaryLit, stringLit
+    empty,
+    binaryLit, stringLit, realLit, intLit,
+    ident
 
-  ExpressNode* = ref object
+  ExpressNode* = object
     case kind: ExpressNodeKind
     of empty: discard
-    of binaryLit: bin: Binary
-    of encodedStringLit: encodedStr: EncodedString
+    of binaryLit: binaryVal: Binary
+    of stringLit: stringVal: String
+    of realLit: realVal: Real
+    of intLit: intVal: int
+    of ident: name: string
 
 
+func ident*(s: string): ExpressNode = ExpressNode(kind: ident, name: s)

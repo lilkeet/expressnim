@@ -1,7 +1,7 @@
 
 import
   std/[unicode, parseutils, strutils, pegs],
-  types, indeterminate
+  types, indeterminate, ast
 
 {.experimental: "strictFuncs".}
 
@@ -213,4 +213,14 @@ func parseLogicalLit*(input: string; output: var Logical; start = 0): Natural =
       output = Outs[kind]
       return MatchLens[kind]
 
+func parseIdent*(input: string; output: var ExpressNode;
+                 start = 0): Natural =
+  ## Parses the literal an EXPRESS identifer and stores it in `output`.
+  ## Returns the length parsed, or 0 if an error occurred.
+  var captures: array[1, string]
+  result = input.matchLen(peg" {\a \w*} ", captures, start)
+  const PegFailure = -1
+  case result
+  of PegFailure: result = 0
+  else: output = ident(captures[0])
 
