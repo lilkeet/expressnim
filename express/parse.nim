@@ -140,3 +140,13 @@ func parseStringLit*(input: string; output: var String; start = 0): Natural =
   else:
     # Not at beginning of either an encoded nor a simple string.
     failure()
+
+func parseRealLit*(input: string; output: var Real; start = 0): Natural =
+  ## Parses the literal form of a `String` (an EXPRESS string) and stores it
+  ## in `output`.
+  ## Returns the length parsed, or 0 if an error occurred.
+  var tmp: float
+
+  result = input.parseFloat(tmp, start)
+
+  output = toReal tmp

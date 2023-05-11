@@ -16,7 +16,7 @@ type
 
   Logical = ?bool
 
-  Real = object
+  Real* = object
     value: float
     precision: Positive ## Significant digits.
 
@@ -152,7 +152,7 @@ const RealMaxPrecision = funcBlock(int):
       (int floor log10 error) * -1
   (min exponents) - 1
 
-func toReal[T: Number|float](n: T): Real =
+func toReal*[T: Number|float](n: T): Real =
   when n is Real: n
   else: Real(value: float(n), precision: RealMaxPrecision)
 
