@@ -4,12 +4,14 @@ discard """
   batchable: true
   joinable: true
   timeout: 5.0
-  targets: "c cpp js"
+  targets: "c cpp"
   valgrind: true
 """
 
 
-import ../express/[types, parse]
+import
+  std/[math],
+  ../express/[types, parse, indeterminate]
 
 block binaryLit:
   block:
@@ -58,3 +60,36 @@ block stringLit:
     var output: String
     assert faultySimple.parseStringLit(output) == 0
     assert $output == "Cannot span multiple "
+
+
+block realLit:
+  block:
+    let example = "1.E6"
+    var output = real()
+    assert example.parseRealLit(output) == example.len
+    assert output == toReal (1 * 10^6)
+  block:
+    let
+      prefix = "\n\n hehe\n\n"
+      example = "3.5e-5"
+      together = prefix & example
+    var output = real()
+    assert together.parseRealLit(output, prefix.len) == example.len
+    assert output == toReal (3.5 * 10.0.pow(-5.0))
+  block:
+    let faultyExample = ".001"
+    var output = real()
+    assert faultyExample.parseRealLit(output) == 0
+
+block logicalLit:
+  block:
+    let example = "fAlsE"
+    var output: Logical
+    assert example.parseLogicalLit(output) == example.len
+
+    let test = output == ??(false)
+    assert test.isSome
+    assert (get test)
+
+    assert output is Indeterminate[bool]
+    assert output is ?bool

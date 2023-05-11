@@ -14,7 +14,7 @@ type
 
   Number = Real or int
 
-  Logical = ?bool
+  Logical* = ?bool
 
   Real* = object
     value: float
@@ -152,17 +152,22 @@ const RealMaxPrecision = funcBlock(int):
       (int floor log10 error) * -1
   (min exponents) - 1
 
+func real*(): Real = Real(precision: RealMaxPrecision)
+
 func toReal*[T: Number|float](n: T): Real =
   when n is Real: n
   else: Real(value: float(n), precision: RealMaxPrecision)
 
-func round(n: Real): Real =
+func round*(n: Real): Real =
   let
     exponent = floor log10 n.value
     mantissa = n.value * (float 10).pow(-exponent)
   result = Real(value: mantissa.round(n.precision - 1) *
                        (float 10).pow(exponent),
                 precision: n.precision)
+
+func rvalue*(n: Real): float =
+  ## Returns the value of a `Real`, rounding to its precision.
 
 type
   MeasurableSequence = concept x
@@ -263,16 +268,19 @@ func `div`[T: Number; U: Number](l: T; r: U): int =
 #### Relational operators
 ### Numerical comparisons
 template generateRelationsFor(operator: untyped): untyped =
-  func `operator`[T: Number; U: Number](l: T; r: U): bool =
-    when l is Real and r is Real: operator(l.value, r.value)
-    elif l is Real: operator(l.value, r)
-    else: operator(l, r.value)
+  func `operator`*[T: Number; U: Number](l: T; r: U): bool =
+    when l is Real and r is Real: operator(l.rvalue, r.rvalue)
+    elif l is Real: operator(l.rvalue, r)
+    else: operator(l, r.rvalue)
 
 generateRelationsFor `==`
 generateRelationsFor `<`
 generateRelationsFor `<=`
 
-template `<>`(l, r: untyped): untyped = l != r
+func `==`*(l, r: Real): bool =
+  l.rvalue == r.rvalue
+
+template `<>`*(l, r: untyped): untyped = l != r
 
 ### Sequence comparisons
 func `<`(l, r: Rune): bool = l <% r

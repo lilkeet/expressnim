@@ -1,7 +1,7 @@
 
 import
-  std/[unicode, parseutils, strutils],
-  types
+  std/[unicode, parseutils, strutils, pegs],
+  types, indeterminate
 
 {.experimental: "strictFuncs".}
 
@@ -141,12 +141,76 @@ func parseStringLit*(input: string; output: var String; start = 0): Natural =
     # Not at beginning of either an encoded nor a simple string.
     failure()
 
+#[let whiteSpace = peg"""whiteSpace <- (normalWhiteSpace / remark)+
+#### Normal whitespace
+horizontalTab <- \009
+lineFeed <- \010
+carriageReturn <- \013
+normalWhiteSpace <- horizontalTab / lineFeed / carriageReturn / [ ] / \n
+
+#### Remarks
+# Remarks must be treated as whitespace, in order to meet the ISO's
+# requirements to be an EXPRESS parser.
+embeddedMarker <- [()*]
+embeddedRemark <- "(*" (embeddedRemark / (!embeddedMarker expressChar))* "*)"
+tailRemark <- "--" (!\n expressChar)* \n
+
+remark <- embeddedRemark / tailRemark
+"""]#
+
+
 func parseRealLit*(input: string; output: var Real; start = 0): Natural =
   ## Parses the literal form of a `String` (an EXPRESS string) and stores it
   ## in `output`.
   ## Returns the length parsed, or 0 if an error occurred.
+  block checkForErrors:
+    # EXPRESS is a little more restrictive than Nim's parseFloat.
+    let
+      realLit = peg"\d+ ([.] \d* ([eE] [-+] \d+)?)?"
+      followsExpressRealFormat = input.match(realLit, start)
+    if not followsExpressRealFormat: return
   var tmp: float
-
   result = input.parseFloat(tmp, start)
-
   output = toReal tmp
+
+
+func parseIntLit*(input: string; output: var int; start = 0): Natural =
+  ## Parses the literal form of an `Integer` (an EXPRESS int) and stores it
+  ## in `output`.
+  ## Returns the length parsed, or 0 if an error occurred.
+  result = input.parseInt(output, start)
+
+func parseLogicalLit*(input: string; output: var Logical; start = 0): Natural =
+  ## Parses the literal form of a `Logical` and stores it in `output`.
+  ## Returns the length parsed, or 0 if an error occurred.
+  ## A `Logical` could be thought of as an enum with values `false`, `unknown`,
+  ## and `true`, in that order. For consistency, though, it is currently
+  ## modeled as an `Indeterminate[bool]`.
+  runnableExamples:
+    import indeterminate, types
+    let example = "fAlsE"
+    var output: Logical
+    assert example.parseLogicalLit(output) == example.len
+    let test = output == ??(false)
+    assert test.isSome
+    assert (get test)
+
+    assert output is Indeterminate[bool]
+    assert output is ?bool
+
+  type LogicalKind = enum
+    lkFalse, lkUnknown, lkTrue
+  template logArray(t: typedesc): typedesc = array[lkFalse..lkTrue, t]
+  let matchers: logArray(Peg) = [peg" i'false' ", peg" i'unknown' ",
+                                 peg" i'true' "]
+  const
+    MatchLens: logArray(Natural) = [Natural "false".len, "unknown".len,
+                                    "true".len]
+    Outs: logArray(Logical) = [some(false), none(bool), some(true)]
+  for kind in lkFalse..lkTrue:
+    let matchFound = input.match(matchers[kind], start)
+    if matchFound:
+      output = Outs[kind]
+      return MatchLens[kind]
+
+
